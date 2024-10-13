@@ -1,0 +1,163 @@
+
+# This script handles important file backup for full system or release upgrades
+# The files listed here is not comprehensive, but its the most basic
+
+
+# Define backup location
+BACKUP_DIR() {
+    # set default valu for the Bkp_Dir
+    Bkp_Dir=${1:-"$HOME/Backups"}
+    if [[ -d "$Bkp_Dir" ]]; then
+        echo "Backup folder already exixts at: $(realpath $Bkp_Dir)"; echo
+        sleep 1
+    else
+        mkdir -p "$Bkp_Dir"
+fi 
+}
+
+# check if the rsync cimmanbis installed
+check_rsync() {
+    if ! command -v rsync &> /dev/null; then
+        printf "\nrsync is not installed. Please install it and try again.\n\n"
+        exit 1
+    fi
+}
+
+
+# backup function for Update-n-Upgrade.sh script
+upgrade_backup() {
+
+	# check rsync
+	check_rsync
+	
+    # Define files/directories to back up
+    CONFIG_FILES=(
+        "/etc/apt/sources.list"
+        "/etc/hosts"
+        "/etc/fstab"
+        "$HOME/.bashrc"
+        "$HOME/.profile"
+        "$HOME/.config/"
+    )
+
+    # Define new backup dir specially for upgrades
+    BACKUP_DIR
+    local new="$Bkp_Dir/Upgrades/$(date +%Y-%m-%d_%H-%M-%S)"
+    mkdir -p "$new"
+
+    # Create backups
+    echo "Creating backups..."  
+    for FILE in "${CONFIG_FILES[@]}"; do
+        
+        # check if file exists
+        if [ -e "$FILE" ]; then
+            echo "Backing up $FILE to $new"
+            
+            # rsync handles backup operations better than just cp
+            rsync -azsh "$FILE" "$new" || { printf "\nFailed to backup files from $FILE to $new\n"; exit 1; }
+        else
+            printf "\nWarning: $FILE does not exist, skipping...\n\n"
+        fi
+    done
+    echo "Backup Ccompleted!"
+}
+
+
+
+# ====( for 'Automate Backup' task in Main.sh script )====
+Auto_bckp() {
+    # Function to display the usage
+    usage() {
+        echo "Usage: $0"
+        echo "This script will help you automate backups interactively."
+        exit 1
+    }
+
+    # Function to perform the backup with error handling
+    perform_backup() {
+        local source_dir="$1"
+        local dest_dir="$2"
+        
+        # Create destination directory if it doesn't exist
+        mkdir -p "$dest_dir"
+
+        # Use rsync for backup
+        rsync -avzsh "$source_dir/" "$dest_dir/" || { printf "\nBackup failed...\n"; exit 1; }
+
+        echo "Backup completed successfully from '$source_dir' to '$dest_dir'."
+    }
+
+    # Function to setup cron job
+    setup_cron() {
+        local source_dir="$1"
+        local dest_dir="$2"
+        local schedule="$3"
+        
+        # Add the cron job
+        (crontab -l; echo "$schedule rsync -avzsh $source_dir/ $dest_dir/") | crontab - || { printf "\nFailed to set up cron job.\n"; exit 1; }
+        
+        echo "Cron job set up successfully to run at '$schedule'."
+    }
+
+    # Main function
+    main() {
+
+    	# Check rsync
+    	check_rsync
+
+        # Define new backup dir specially for 'Automatic Backup' Task
+        BACKUP_DIR
+        local new="$Bkp_Dir/Auto_Backup/$(date +%Y-%m)"
+        mkdir -p "$new"
+        echo "Welcome to the Interactive Backup Script!"
+        echo "Pls, Press 'enter' to use the default values enclosed in ()"; echo
+        
+        # Prompt for the source directory
+        read -p "Enter the source directory to back up: " source_dir
+        # check if the dir exists
+        if [[ ! -d "$source_dir" ]]; then
+            printf "Source directory does not exist. Please try again.\n"
+            # usage
+        fi
+        echo
+
+        # Prompt for the destination directory
+        read -p "Enter the destination directory for the backup (${Home}/Backups): " dest_dir
+        dest_dir="$new"
+
+        # Confirm backup details
+        printf "\nYou are about to back up from '$source_dir' to '$dest_dir'\n"
+        read -p "Do you want to proceed? (Y/n): " confirm
+
+        if [[ "${confirm,,}" == "y" || -z $confirm ]]; then
+        
+            # Perform the backup by calling the 'perform_backup' function 
+            perform_backup "$source_dir" "$dest_dir"
+
+            # Ask if user wants to set up a cron job
+            echo
+            read -p "Do you want to set up automatic backups? (y/n): " setup_cron_confirm
+
+            if [[ "${setup_cron_confirm,,}" == "y" || -z $setup_cron_confirm ]]; then
+                echo "Enter the schedule for the cron job (e.g., '0 * * * *' for hourly): "
+                read schedule
+                setup_cron "$source_dir" "$dest_dir" "$schedule"
+            else
+                echo "Automatic backup setup skipped..."
+            fi
+
+        else
+            echo "Backup operation canceled."
+            exit 0
+        fi
+
+        printf "\nBackup operatons completed!\n\n"
+    }
+
+    # Call the main function
+    main "$@"
+}
+
+
+# upgrade_backup
+# Auto_bckp

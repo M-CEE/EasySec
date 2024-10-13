@@ -1,0 +1,228 @@
+=======( UID vs EUID )=======
+1. User ID (UID)
+- Represents the real owner of the process.
+- Does not change when the process gets elevated privileges.
+
+2. Effective User ID (EUID)
+- Represents the effective owner (in terms of permissions) of the process.
+- Can change to another user’s ID temporarily (such as root for privilege escalation).
+
+Insight: It is better to use $EUID to check for environments with sudo privileges, especially when 
+         the script is executed with the sudo command.
+
+
+
+
+
+=======( echo vs printf )=======
+- Use printf when you need formatted output with precise control over how text is displayed, 
+especially for scripts that need to be portable across different systems.
+
+- Use echo for simple, quick output, when you just need to print text without worrying about formatting, 
+but beware of its portability issues.
+
+Insight: printf is more powerful, reliable, and standardized (across all unix-like OS), 
+making it a better choice for scripts that need robust output handling.
+
+
+
+
+
+=======( Send heredoc to a command )=======
+Example 1:
+command <<EOF
+line 1
+other contents...
+EOF
+
+Example 2: Save the heredoc and also send to command
+command <<EOF > filename.extension
+line 1
+other contents...
+EOF
+
+
+
+
+
+=======( $EUID and $(id -u) )=======
+To get Effective User ID of a user:
+$(id -u) is more portable and standardized across Unix-like systems compared to EUID. 
+Since "id" is a standard command, it’s recommended for scripts that need to ensure consistent 
+behavior across various environments.
+
+For scripts intended to run across different Unix-like systems, use $(id -u) for better portability 
+and reliability.
+
+
+
+
+=======( PS3/Select-case statement  )=======
+Syntax:
+
+PS3="Please select an option: 
+select option in "Option 1" "Option 2" "Option 3" "Quit"
+do
+    case $option in
+        "Option 1")
+            echo "You selected Option 1"
+            ;;
+        # other options also takes this form
+        "Quit")
+            echo "Exiting..."
+            break
+            ;;
+        *)
+            echo "Invalid option. Please try again."
+            ;;
+    esac
+done
+
+>>> Method 2: working with arrays, easier to read & debug
+PS3="Please select an option: "
+option=(
+    "option 1"
+    "option 2"
+    "option 3"
+) # array construct
+select opt in ${options[@]}
+do
+    some stuff
+done
+
+
+
+
+=======( Confirmation function )=======
+I find this function useful for multiple, several user choice Confirmations:
+
+confirm() {
+    local action="$1"
+    while true; do
+        read -p "Proceed to perform $action? (Y/n): " rans
+        if [[ "${rans,,}" == "y" || -z "$rans" ]]; then
+            return 0
+        elif [[ "${rans,,}" == "n" ]]; then
+            printf "Operation canceled.\n\n"
+            return 1
+        else
+            printf "Please enter 'Y' or 'n'.\n"
+        fi
+    done
+}
+
+usage:
+if confirm "Choice"; then <do sth>; fi
+
+
+
+
+=======( The sed command )=======
+
+sed -i '/^PASS_MIN_LEN/c\PASS_MIN_LEN 12' /etc/login.defs
+
+Breakdown of the Command:
+sed: A stream editor used to filter and transform text.
+
+-i: In-place editing. This means the file is modified directly without creating a copy. 
+    The changes are applied to the file immediately.
+
+'/^PASS_MIN_LEN/c\PASS_MIN_LEN 12': This is the command given to sed. It does the following:
+    /^PASS_MIN_LEN/: This is a regular expression that matches lines starting with PASS_MIN_LEN. 
+        The ^ symbol indicates the start of a line.
+    c\: The c\ command tells sed to replace the entire line that matches the regular expression.
+    PASS_MIN_LEN 12: This is the new content that replaces the matching line. 
+        It sets the minimum password length to 12 characters.
+/etc/login.defs: The file being edited. 
+
+The /etc/login.defs file:
+    This file contains parameters for password policies
+    such as password aging, strength, and other user login settings.
+
+Purpose:
+    The command ensures that the line starting with PASS_MIN_LEN is updated 
+    to enforce a minimum password length of 12 characters for system users. 
+    If the PASS_MIN_LEN setting already exists, it will be replaced with the new value. 
+    If it doesn’t exist, this command will not add it; it only works on an existing line.
+
+
+
+
+
+
+==========( The getent command )==========
+The getent command in Linux is used to retrieve entries from various administrative databases. 
+These databases are typically defined in the /etc/nsswitch.conf file, and they include 
+information like user accounts, groups, hostnames, services, and more.
+
+Some common databases that can be queried by getent include:
+passwd: User account information.
+group: Group information.
+hosts: Hostname resolution.
+services: Network services.
+networks: Network information.
+protocols: Network protocols.
+shadow: User passwords (retrieves information from the shadow password file).
+
+Example:
+To get info of all users:
+    getent passwd
+To view all present groups:
+    getent group
+To view a single user's info:
+    getent passwd <username>
+
+
+==========( The 'groups' command )==========
+groups <username> lists the groups a user belongs to
+
+==========( The 'gpasswd' command )==========
+
+
+
+
+limit_sudo_privileges() {
+
+    read -p 
+    echo "Limiting sudo privileges..."
+
+    # Define a group for sudoers (e.g., 'admin' group)
+    SUDO_GROUP="admin"
+    echo "Ensuring only users in the $SUDO_GROUP group have sudo privileges..."
+    
+    # Create the sudo group if it doesn't exist
+    if ! getent group "$SUDO_GROUP" >/dev/null; then
+        echo "creating a sudoers group: $SUDO_GROUP"
+        groupadd "$SUDO_GROUP"
+    fi
+
+    # Restrict sudo access to only users in the sudo group
+    echo "%$SUDO_GROUP ALL=(ALL) ALL" > /etc/sudoers.d/99_sudo_group
+
+    # Remove users not in the sudo group from sudoers
+    # for user in $(getent passwd | awk -F: '{ print $1 }')
+    for user in $(getent passwd | cut -d: -f 1); do
+        if groups "$user" | grep -q 'sudo'; then
+            if ! groups "$user" | grep -q "$SUDO_GROUP"; then
+                echo "Removing $user from sudo privileges"
+                gpasswd -d "$user" sudo
+            fi
+        fi
+    done
+}
+
+
+
+
+==========( Default Sudoers Group )==========
+The default group for sudo privileges varies between different Linux distributions. 
+Here’s a summary for some popular distributions:
+    Debian and Ubuntu: sudo group
+    RHEL, CentOS, Fedora, Arch, OpenSUSE: wheel group
+
+
+
+
+
+
+==========()==========
