@@ -25,7 +25,7 @@ To install and run EasySec.sh, follow these steps:
 
 **2. Navigate to the directory:**
 
-`cd EasySec.sh`
+`cd EasySec`
 
 
 **3. Give execution permission:**
